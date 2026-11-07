@@ -1,0 +1,10 @@
+# Variáveis de ambiente e chaves de API
+.env
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Banco vetorial local e PDFs grandes (opcional: pergunte ao colega se ele quer o chroma_munzner no Git ou se vai rodar indexar_livro.py)
+!especificacao_ferramentas_mcp.pdf
