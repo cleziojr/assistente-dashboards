@@ -12,7 +12,7 @@ def upload_csv(file_path: str) -> dict:
     """Valida um arquivo CSV e retorna um resumo das colunas"""
 
     file_path_object = Path(file_path)
-    tamanho_mb_arquivo = file_path_object.stat().st_size / (1024 * 1024)~
+    tamanho_mb_arquivo = file_path_object.stat().st_size / (1024 * 1024)
 
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado {file_path}. Verifique o caminho e tente novamente"}
