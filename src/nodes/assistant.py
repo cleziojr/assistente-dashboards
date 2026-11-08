@@ -6,15 +6,16 @@ from src.llm import llm
 from src.prompts.assistant import SYSTEM_PROMPT
 
 async def assistente_node(state: AgentState, mcp_client: MultiServerMCPClient) -> dict:
-    ferramentas = await mcp_client.get_tools()
-    ferramentas_permitidas = [ferramenta for ferramenta in ferramentas if ferramenta.name in {"read_file", "list_directory"}]
-    agente = create_agent(llm, ferramentas_permitidas)
-    catalogo_skills = state.get("skill_catalog", "")
-    contexto_rag = state.get("rag_context", "")
+    async with mcp_client:
+        ferramentas = await mcp_client.get_tools()
+        ferramentas_permitidas = [ferramenta for ferramenta in ferramentas if ferramenta.name in {"read_file", "list_directory"}]
+        agente = create_agent(llm, ferramentas_permitidas)
+        catalogo_skills = state.get("skill_catalog", "")
+        contexto_rag = state.get("rag_context", "")
 
-    mensagem_sistema = SystemMessage(content=SYSTEM_PROMPT.format(skill_catalog=catalogo_skills, rag_context=contexto_rag))
-    mensagens_com_sistema = [mensagem_sistema] + list(state["messages"])
-    resultado = await agente.ainvoke({"messages": mensagens_com_sistema})
+        mensagem_sistema = SystemMessage(content=SYSTEM_PROMPT.format(skill_catalog=catalogo_skills, rag_context=contexto_rag))
+        mensagens_com_sistema = [mensagem_sistema] + list(state["messages"])
+        resultado = await agente.ainvoke({"messages": mensagens_com_sistema})
 
-    novas_mensagens = resultado["messages"][len(mensagens_com_sistema):]
-    return {"messages": novas_mensagens}
+        novas_mensagens = resultado["messages"][len(mensagens_com_sistema):]
+        return {"messages": novas_mensagens}
