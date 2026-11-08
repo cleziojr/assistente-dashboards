@@ -18,6 +18,8 @@ TERMOS_ESCOPO = [
     "streamlit", "barras", "cartão", "métrica",
 ]
 
+MAXIMO_CARACTERES = 300
+
 def verifica_prompt_invalido(texto: str) -> bool:
     texto_lower = texto.lower()
     return any(re.search(padrao, texto_lower) for padrao in PADROES_ALERTA)
@@ -30,6 +32,9 @@ def verifica_prompt_entrada(state: AgentState) -> bool:
     ultima_msg = state["messages"][-1].content
     if isinstance(ultima_msg, list):
         ultima_msg = " ".join(bloco.get("text", "") for bloco in ultima_msg if isinstance(bloco, dict))
+
+    if len(ultima_msg) > MAXIMO_CARACTERES:
+        ultima_msg = ultima_msg[:MAXIMO_CARACTERES] + "... [mensagem truncada]"
 
     if verifica_prompt_invalido(ultima_msg):
         return {"is_safe": False, "messages": [AIMessage(content="Sua mensagem contém padrões não permitidos e não pode ser processada.")]}
