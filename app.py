@@ -1,8 +1,10 @@
+import json
 import uuid
 import shutil
 import asyncio
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
@@ -68,9 +70,46 @@ with st.sidebar:
         st.file_uploader("Upload desabilitado", type="csv", disabled=True)
 
 
+def extrair_dados_grafico(tool_messages: list) -> list:
+    """Extrai dados estruturados de gráfico dos ToolMessages."""
+    graficos = []
+    for msg in tool_messages:
+        try:
+            dados = json.loads(msg.content)
+            if dados.get("ok") and dados.get("tipo") in {"barras_verticais", "barras_horizontais", "Cartão"}:
+                graficos.append(dados)
+        except (json.JSONDecodeError, AttributeError):
+            continue
+    return graficos
+
+
+def renderizar_grafico(dados: dict):
+    """Renderiza o gráfico ou cartão de métrica no Streamlit."""
+    tipo = dados.get("tipo")
+
+    if tipo == "Cartão":
+        st.metric(
+            label=f"{dados.get('agregacao', '').capitalize()} de {dados.get('coluna', '')}",
+            value=dados.get("resultado"),
+        )
+
+    elif tipo in {"barras_verticais", "barras_horizontais"}:
+        df = pd.DataFrame(dados["dados_agrupados"])
+        eixo_x = dados["x"]
+        eixo_y = dados["y"]
+        df = df.set_index(eixo_x)
+
+        if tipo == "barras_verticais":
+            st.bar_chart(df[eixo_y], x_label=eixo_x, y_label=eixo_y)
+        else:
+            st.bar_chart(df[eixo_y], horizontal=True, x_label=eixo_y, y_label=eixo_x)
+
+
 for entrada in st.session_state.historico:
     with st.chat_message(entrada["role"]):
         st.markdown(entrada["content"])
+        for grafico in entrada.get("graficos", []):
+            renderizar_grafico(grafico)
         if entrada.get("ferramentas"):
             with st.expander("🔧 Ferramentas chamadas"):
                 for t in entrada["ferramentas"]:
@@ -101,19 +140,36 @@ if prompt:
 
         resposta_texto = ""
         ferramentas_chamadas = []
+        tool_messages = []
         skills_carregadas = resultado.get("active_skills", [])
 
         for msg in reversed(resultado["messages"]):
             if isinstance(msg, AIMessage) and msg.content:
-                resposta_texto = msg.content if isinstance(msg.content, str) else str(msg.content)
+                conteudo = msg.content
+                if isinstance(conteudo, str):
+                    resposta_texto = conteudo
+                elif isinstance(conteudo, list):
+                    resposta_texto = "\n\n".join(
+                        bloco.get("text", "")
+                        for bloco in conteudo
+                        if isinstance(bloco, dict) and bloco.get("type") == "text"
+                    )
+                else:
+                    resposta_texto = str(conteudo)
                 break
 
         for msg in resultado["messages"]:
             if isinstance(msg, ToolMessage):
+                tool_messages.append(msg)
                 linha = f"ferramenta: {msg.name}\nresultado: {str(msg.content)[:300]}"
                 ferramentas_chamadas.append(linha)
 
+        graficos = extrair_dados_grafico(tool_messages)
+
         st.markdown(resposta_texto)
+
+        for grafico in graficos:
+            renderizar_grafico(grafico)
 
         if ferramentas_chamadas:
             with st.expander("🔧 Ferramentas chamadas"):
@@ -130,4 +186,5 @@ if prompt:
         "content": resposta_texto,
         "ferramentas": ferramentas_chamadas,
         "skills": skills_carregadas,
+        "graficos": graficos,
     })
