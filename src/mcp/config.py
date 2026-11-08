@@ -1,10 +1,11 @@
+import sys
 from pathlib import Path
 
 DIRETORIO_DATA = str(Path(__file__).resolve().parents[1] / "data")
 
 MCP_CONFIG = {
     "dashboard": {
-        "command": "python",
+        "command": sys.executable,
         "args": ["-m", "src.mcp.dashboard_server"],
         "transport": "stdio",
     },
