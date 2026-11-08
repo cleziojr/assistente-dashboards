@@ -1,12 +1,20 @@
-import subprocess
-import sys
+import shutil
+import time
 import pandas as pd
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("Servidor do Assistente de Dashboards")
 MAX_MB = 10
+TEMPO_EXPIRACAO_SEGUNDOS = 3600
 DATA_DIRETORIO = Path(__file__).resolve().parents[2] / "data"
+
+
+def limpar_sessoes_expiradas():
+    agora = time.time()
+    for subdir in DATA_DIRETORIO.iterdir():
+        if subdir.is_dir() and agora - subdir.stat().st_mtime > TEMPO_EXPIRACAO_SEGUNDOS:
+            shutil.rmtree(subdir, ignore_errors=True)
 
 
 def valida_caminho_arquivo(caminho_arquivo: Path) -> str | None:
@@ -20,6 +28,7 @@ def valida_caminho_arquivo(caminho_arquivo: Path) -> str | None:
 def upload_csv(file_path: str) -> dict:
     """Valida um arquivo CSV e retorna um resumo das colunas"""
 
+    limpar_sessoes_expiradas()
     file_path_object = Path(file_path).resolve()
 
     erro_caminho = valida_caminho_arquivo(file_path_object)
@@ -53,6 +62,7 @@ def upload_csv(file_path: str) -> dict:
 def efetua_agregacao_dados(csv_path: str, coluna: str, agregacao: str = None) -> dict:
     """Agrega dados de uma coluna específica de um arquivo CSV. As operações suportadas são: total, média, contagem, máximo e mínimo"""
 
+    limpar_sessoes_expiradas()
     file_path_object = Path(csv_path).resolve()
 
     erro_caminho = valida_caminho_arquivo(file_path_object)
@@ -84,6 +94,7 @@ def efetua_agregacao_dados(csv_path: str, coluna: str, agregacao: str = None) ->
 def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) -> dict:
     """Estrutura os dados de um arquivo CSV para gerar um gráfico de barras verticais"""
 
+    limpar_sessoes_expiradas()
     file_path_object = Path(csv_path).resolve()
 
     erro_caminho = valida_caminho_arquivo(file_path_object)
@@ -106,6 +117,7 @@ def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) ->
 def estrutura_dados_barras_horizontais(csv_path: str, eixo_x: str, eixo_y: str) -> dict:
     """Estrutura os dados de um arquivo CSV para gerar um gráfico de barras horizontais"""
 
+    limpar_sessoes_expiradas()
     file_path_object = Path(csv_path).resolve()
 
     erro_caminho = valida_caminho_arquivo(file_path_object)
