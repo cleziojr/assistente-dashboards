@@ -35,4 +35,28 @@ def upload_csv(file_path: str) -> dict:
 
     return {"ok": True, "resumo_dados_arquivo": resumo_dados_arquivo}
 
+@mcp.tool()
+def exibe_cartao(csv_path: str, coluna: str, agregacao: str = None) -> dict:
+    """Exibe um cartão com métrica agregada (total, média, contagem, máimo e/ou mínimo)"""
 
+    file_path_object = Path(csv_path)
+
+    if not file_path_object.exists():
+        return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
+
+    df = pd.read_csv(file_path_object)
+    if coluna not in df.columns:
+        return {"ok": False, "error": f"A coluna que o usuário solicitou para efetuar a agregação não existe no conjunto de dados importado"}
+
+    operacao = {"total": df[coluna].sum(),
+                "media": df[coluna].mean(),
+                "contagem": df[coluna].count(),
+                "maximo": df[coluna].max(),
+                "minimo": df[coluna].min()
+                }
+
+    if agregacao not in operacao:
+        return {"ok": False, "error": f"A agregação solicitada não é suportada. As opções válidas são: {list(operacao.keys())}"}
+
+    resultado = operacao[agregacao]()
+    return {"ok": True, "resultado": resultado}
