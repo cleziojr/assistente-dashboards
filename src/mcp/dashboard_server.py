@@ -1,3 +1,4 @@
+import base64
 import shutil
 import time
 import pandas as pd
@@ -6,7 +7,9 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("Servidor do Assistente de Dashboards")
 MAX_MB = 10
+MAX_BYTES_BASE64 = MAX_MB * 1024 * 1024
 TEMPO_EXPIRACAO_SEGUNDOS = 3600
+EXTENSOES_PERMITIDAS = {".csv"}
 DATA_DIRETORIO = Path(__file__).resolve().parents[2] / "data"
 
 
@@ -135,6 +138,38 @@ def estrutura_dados_barras_horizontais(csv_path: str, eixo_x: str, eixo_y: str) 
     dados_agrupados = df.groupby(eixo_x)[eixo_y].sum().reset_index()
 
     return {"ok": True, "tipo": "barras_horizontais", "x": eixo_x, "y": eixo_y, "dados_agrupados": dados_agrupados.to_dict(orient="records")}
+
+
+@mcp.tool()
+def upload_csv_bytes(nome_arquivo: str, conteudo_base64: str) -> dict:
+    """Recebe um CSV codificado em base64, valida e salva em data/ para uso nas demais ferramentas."""
+    limpar_sessoes_expiradas()
+
+    if Path(nome_arquivo).suffix.lower() not in EXTENSOES_PERMITIDAS:
+        return {"ok": False, "error": f"Apenas arquivos CSV são permitidos. Extensão recebida: '{Path(nome_arquivo).suffix}'"}
+
+    if len(conteudo_base64) > MAX_BYTES_BASE64 * 1.4:
+        return {"ok": False, "error": f"Arquivo muito grande. O limite é {MAX_MB} MB."}
+
+    try:
+        conteudo = base64.b64decode(conteudo_base64)
+    except Exception:
+        return {"ok": False, "error": "Conteúdo base64 inválido. Verifique a codificação e tente novamente."}
+
+    tamanho_mb = len(conteudo) / (1024 * 1024)
+    if tamanho_mb > MAX_MB:
+        return {"ok": False, "error": f"Arquivo muito grande ({tamanho_mb:.1f} MB). O limite é {MAX_MB} MB."}
+
+    DATA_DIRETORIO.mkdir(parents=True, exist_ok=True)
+    destino = (DATA_DIRETORIO / Path(nome_arquivo).name).resolve()
+
+    erro_caminho = valida_caminho_arquivo(destino)
+    if erro_caminho:
+        return {"ok": False, "error": erro_caminho}
+
+    destino.write_bytes(conteudo)
+
+    return {"ok": True, "caminho": str(destino), "mensagem": f"Arquivo salvo. Use o caminho '{destino}' nas demais ferramentas."}
 
 
 if __name__ == "__main__":
