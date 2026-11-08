@@ -13,6 +13,7 @@ class AgentState(TypedDict):
     is_safe: bool
     search_query: str      # Query atual (permite reescrita pelo avaliador no loop)
     rag_is_complete: bool  # Flag de controle do avaliador do RAG
+    skill_catalog: str
 
 
 def init_graph_state() -> AgentState:
@@ -25,6 +26,7 @@ def init_graph_state() -> AgentState:
         "is_safe": True,
         "search_query": "",
         "rag_is_complete": False,
+        "skill_catalog": "",
     }
 
 class AvaliacaoRAG(BaseModel):
