@@ -137,3 +137,5 @@ def estrutura_dados_barras_horizontais(csv_path: str, eixo_x: str, eixo_y: str) 
     return {"ok": True, "tipo": "barras_horizontais", "x": eixo_x, "y": eixo_y, "dados_agrupados": dados_agrupados.to_dict(orient="records")}
 
 
+if __name__ == "__main__":
+    mcp.run()
