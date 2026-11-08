@@ -10,4 +10,4 @@ __pycache__/
 !especificacao_ferramentas_mcp.pdf
 
 # Banco de dados do Chroma
-chroma.sqlite3
+**/chroma.sqlite3
