@@ -80,3 +80,22 @@ def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) ->
 
     return {"ok": True, "tipo": "barras_verticais", "x": eixo_x, "y": eixo_y, "dados_agrupados": dados_agrupados.to_dict(orient="records")}
 
+@mcp.tool()
+def estrutura_dados_barras_horizontais(csv_path: str, eixo_x: str, eixo_y: str) -> dict:
+    """Estrutura os dados de um arquivo CSV para gerar um gráfico de barras horizontais"""
+
+    file_path_object = Path(csv_path)
+    
+    if not file_path_object.exists():
+        return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
+
+    df = pd.read_csv(file_path_object)
+    for coluna in [eixo_x, eixo_y]:
+        if coluna not in df.columns:
+            return {"ok": False, "error": f"A coluna '{coluna}' não existe no conjunto de dados importado"}
+
+    dados_agrupados = df.groupby(eixo_x)[eixo_y].sum().reset_index()
+
+    return {"ok": True, "tipo": "barras_horizontais", "x": eixo_x, "y": eixo_y, "dados_agrupados": dados_agrupados.to_dict(orient="records")}
+
+
