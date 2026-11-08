@@ -36,8 +36,8 @@ def upload_csv(file_path: str) -> dict:
     return {"ok": True, "resumo_dados_arquivo": resumo_dados_arquivo}
 
 @mcp.tool()
-def exibe_cartao(csv_path: str, coluna: str, agregacao: str = None) -> dict:
-    """Exibe um cartão com métrica agregada (total, média, contagem, máimo e/ou mínimo)"""
+def efetua_agregacao_dados(csv_path: str, coluna: str, agregacao: str = None) -> dict:
+    """Agrega dados de uma coluna específica de um arquivo CSV. As operações suportadas são: total, média, contagem, máximo e mínimo"""
 
     file_path_object = Path(csv_path)
 
@@ -60,3 +60,4 @@ def exibe_cartao(csv_path: str, coluna: str, agregacao: str = None) -> dict:
 
     resultado = operacao[agregacao]()
     return {"ok": True, "resultado": resultado}
+
