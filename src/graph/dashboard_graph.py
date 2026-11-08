@@ -1,9 +1,7 @@
-from functools import partial
 from typing import Literal
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import InMemorySaver
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from src.schemas import AgentState
 from src.nodes.input_guard import guardrail_entrada_node
@@ -13,7 +11,6 @@ from src.nodes.rag_evaluator import evaluate_rag_node, roteador_rag
 from src.nodes.assistant import assistente_node
 from src.nodes.output_guard import guardrail_saida_node
 from src.nodes.summarizer import resume_conversa_node, roteador_resumo
-from src.mcp.config import MCP_CONFIG
 
 def roteador_guardrail(state: AgentState) -> Literal["resumir_mensagens", "carregar_skills", "__end__"]:
     if not state.get("is_safe", True):
@@ -21,8 +18,6 @@ def roteador_guardrail(state: AgentState) -> Literal["resumir_mensagens", "carre
     return roteador_resumo(state)
 
 def build_graph():
-    mcp_client = MultiServerMCPClient(MCP_CONFIG)
-
     builder = StateGraph(AgentState)
 
     builder.add_node("guardrail_entrada", guardrail_entrada_node)
@@ -30,7 +25,7 @@ def build_graph():
     builder.add_node("carregar_skills", carrega_skills_node)
     builder.add_node("rag_search", agentic_rag_node)
     builder.add_node("rag_evaluator", evaluate_rag_node)
-    builder.add_node("assistente", partial(assistente_node, mcp_client=mcp_client))
+    builder.add_node("assistente", assistente_node)
     builder.add_node("guardrail_saida", guardrail_saida_node)
 
     builder.set_entry_point("guardrail_entrada")
