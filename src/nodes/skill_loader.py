@@ -3,7 +3,7 @@ from src.schemas import AgentState
 
 SKILLS_DIR = Path(__file__).resolve().parents[2] / "src" / "skills"
 
-def skill_loader_node(state: AgentState) -> dict:
+def carrega_skills_node(state: AgentState) -> dict:
     """Lê o catálogo de skills e injeta a lista no estado"""
 
     linhas = []
