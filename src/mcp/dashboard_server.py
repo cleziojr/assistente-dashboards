@@ -6,13 +6,27 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("Servidor do Assistente de Dashboards")
 MAX_MB = 10
+DATA_DIRETORIO = Path(__file__).resolve().parents[2] / "data"
+
+
+def valida_caminho_arquivo(caminho_arquivo: Path) -> str | None:
+    """Retorna mensagem de erro se o caminho não estiver em data/, ou None se válido."""
+    if not str(caminho_arquivo.resolve()).startswith(str(DATA_DIRETORIO)):
+        return "Acesso negado"
+    return None
+
 
 @mcp.tool()
 def upload_csv(file_path: str) -> dict:
     """Valida um arquivo CSV e retorna um resumo das colunas"""
 
-    file_path_object = Path(file_path)
-    tamanho_mb_arquivo = file_path_object.stat().st_size / (1024 * 1024)
+    file_path_object = Path(file_path).resolve()
+
+    erro_caminho = valida_caminho_arquivo(file_path_object)
+    if erro_caminho:
+        return {"ok": False, "error": erro_caminho}
+
+    tamanho_mb_arquivo = file_path_object.stat().st_size / (1024 * 1024) if file_path_object.exists() else 0
 
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado {file_path}. Verifique o caminho e tente novamente"}
@@ -39,7 +53,11 @@ def upload_csv(file_path: str) -> dict:
 def efetua_agregacao_dados(csv_path: str, coluna: str, agregacao: str = None) -> dict:
     """Agrega dados de uma coluna específica de um arquivo CSV. As operações suportadas são: total, média, contagem, máximo e mínimo"""
 
-    file_path_object = Path(csv_path)
+    file_path_object = Path(csv_path).resolve()
+
+    erro_caminho = valida_caminho_arquivo(file_path_object)
+    if erro_caminho:
+        return {"ok": False, "error": erro_caminho}
 
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
@@ -66,8 +84,12 @@ def efetua_agregacao_dados(csv_path: str, coluna: str, agregacao: str = None) ->
 def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) -> dict:
     """Estrutura os dados de um arquivo CSV para gerar um gráfico de barras verticais"""
 
-    file_path_object = Path(csv_path)
-    
+    file_path_object = Path(csv_path).resolve()
+
+    erro_caminho = valida_caminho_arquivo(file_path_object)
+    if erro_caminho:
+        return {"ok": False, "error": erro_caminho}
+
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
 
@@ -84,8 +106,12 @@ def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) ->
 def estrutura_dados_barras_horizontais(csv_path: str, eixo_x: str, eixo_y: str) -> dict:
     """Estrutura os dados de um arquivo CSV para gerar um gráfico de barras horizontais"""
 
-    file_path_object = Path(csv_path)
-    
+    file_path_object = Path(csv_path).resolve()
+
+    erro_caminho = valida_caminho_arquivo(file_path_object)
+    if erro_caminho:
+        return {"ok": False, "error": erro_caminho}
+
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
 
