@@ -1,5 +1,7 @@
 import uuid
+import shutil
 import asyncio
+from pathlib import Path
 
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
@@ -8,6 +10,9 @@ from src.graph.dashboard_graph import build_graph
 
 st.set_page_config(page_title="Assistente de Dashboards", layout="wide")
 st.title("📊 Assistente de Dashboards")
+
+LIMITE_UPLOADS = 3
+DATA_ROOT = Path("data")
 
 
 @st.cache_resource
@@ -21,6 +26,15 @@ if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 if "historico" not in st.session_state:
     st.session_state.historico = []
+if "upload_count" not in st.session_state:
+    st.session_state.upload_count = 0
+
+SESSION_DIR = DATA_ROOT / st.session_state.thread_id
+SESSION_DIR.mkdir(parents=True, exist_ok=True)
+
+for subdir in DATA_ROOT.iterdir():
+    if subdir.is_dir() and subdir.name != st.session_state.thread_id:
+        shutil.rmtree(subdir, ignore_errors=True)
 
 
 with st.sidebar:
@@ -28,8 +42,30 @@ with st.sidebar:
     if st.button("🆕 Nova conversa"):
         st.session_state.thread_id = str(uuid.uuid4())
         st.session_state.historico = []
+        st.session_state.upload_count = 0
         st.rerun()
     st.caption(f"Thread: `{st.session_state.thread_id[:8]}…`")
+
+    st.divider()
+    st.subheader("📂 Enviar CSV")
+    uploads_restantes = LIMITE_UPLOADS - st.session_state.upload_count
+
+    if uploads_restantes > 0:
+        arquivo = st.file_uploader(
+            f"Uploads restantes: {uploads_restantes}/{LIMITE_UPLOADS}",
+            type="csv",
+            key=f"uploader_{st.session_state.upload_count}",
+        )
+        if arquivo:
+            destino = SESSION_DIR / arquivo.name
+            destino.write_bytes(arquivo.read())
+            st.session_state.upload_count += 1
+            st.success(f"Salvo em {destino}")
+            st.caption(f"Informe ao assistente: *analise o arquivo `{destino}`*")
+            st.rerun()
+    else:
+        st.warning("Limite de 3 uploads atingido. Atualize a página para iniciar nova sessão.")
+        st.file_uploader("Upload desabilitado", type="csv", disabled=True)
 
 
 for entrada in st.session_state.historico:
