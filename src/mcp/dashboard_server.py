@@ -48,11 +48,31 @@ def limpar_sessoes_expiradas():
             shutil.rmtree(subdir, ignore_errors=True)
 
 
+MAX_CATEGORIAS_EIXO_X = 50
+
+
 def valida_caminho_arquivo(caminho_arquivo: Path) -> str | None:
     """Retorna mensagem de erro se o caminho não estiver em data/, ou None se válido."""
     if not str(caminho_arquivo.resolve()).startswith(str(DATA_DIRETORIO)):
         return "Acesso negado"
     return None
+
+
+def ler_csv(caminho: Path) -> tuple[pd.DataFrame | None, str | None]:
+    """Lê CSV com detecção automática de separador e encoding. Retorna (df, erro)."""
+    for sep in [",", ";"]:
+        for enc in ["utf-8", "latin-1"]:
+            try:
+                df = pd.read_csv(caminho, sep=sep, encoding=enc)
+                if df.shape[1] > 1:
+                    return df, None
+            except (pd.errors.ParserError, UnicodeDecodeError):
+                continue
+    try:
+        df = pd.read_csv(caminho, encoding="utf-8", on_bad_lines="skip")
+        return df, None
+    except Exception as e:
+        return None, f"Não foi possível ler o arquivo CSV: {e}"
 
 
 @mcp.tool()
@@ -77,13 +97,17 @@ def upload_csv(file_path: str) -> dict:
     if file_path_object.suffix.lower() != ".csv":
         return {"ok": False, "error": f"O aquivo deve ser um CSV"}
 
-    df = pd.read_csv(file_path_object)
+    df, erro_leitura = ler_csv(file_path_object)
+    if erro_leitura:
+        return {"ok": False, "error": erro_leitura}
+    if df.empty:
+        return {"ok": False, "error": "O arquivo CSV está vazio."}
 
     resumo_dados_arquivo = {
         coluna: {
             "tipo_dado": str(df[coluna].dtype),
-            "quantidade_valores_nulos": int(df[coluna].isna()).sum(),
-            "exemplos_valores": df[coluna].dropna().sample(3).tolist()
+            "quantidade_valores_nulos": int(df[coluna].isna().sum()),
+            "exemplos_valores": df[coluna].dropna().head(3).tolist()
         } for coluna in df.columns
     }
 
@@ -103,23 +127,36 @@ def efetua_agregacao_dados(csv_path: str, coluna: str, agregacao: str = None) ->
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
 
-    df = pd.read_csv(file_path_object)
+    df, erro_leitura = ler_csv(file_path_object)
+    if erro_leitura:
+        return {"ok": False, "error": erro_leitura}
+    if df.empty:
+        return {"ok": False, "error": "O arquivo CSV está vazio."}
     if coluna not in df.columns:
-        return {"ok": False, "error": f"A coluna que o usuário solicitou para efetuar a agregação não existe no conjunto de dados importado"}
+        return {"ok": False, "error": f"A coluna '{coluna}' não existe. Colunas disponíveis: {list(df.columns)}"}
 
-    operacao = {"total": df[coluna].sum(),
-                "media": df[coluna].mean(),
-                "contagem": df[coluna].count(),
-                "maximo": df[coluna].max(),
-                "minimo": df[coluna].min()
-                }
+    operacoes_numericas = {"total", "media", "maximo", "minimo"}
+    if agregacao in operacoes_numericas and not pd.api.types.is_numeric_dtype(df[coluna]):
+        return {"ok": False, "error": f"A operação '{agregacao}' exige coluna numérica. '{coluna}' é do tipo {df[coluna].dtype}. Colunas numéricas disponíveis: {[c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]}"}
 
-    if agregacao not in operacao:
-        return {"ok": False, "error": f"A agregação solicitada não é suportada. As opções válidas são: {list(operacao.keys())}"}
+    operacoes = {
+        "total": lambda: df[coluna].sum(),
+        "media": lambda: df[coluna].mean(),
+        "contagem": lambda: df[coluna].count(),
+        "maximo": lambda: df[coluna].max(),
+        "minimo": lambda: df[coluna].min(),
+    }
 
-    resultado = operacao[agregacao]()
+    if agregacao not in operacoes:
+        return {"ok": False, "error": f"Agregação inválida. As opções são: {list(operacoes.keys())}"}
 
-    return {"ok": True, "tipo": "Cartão", "coluna": coluna, "agregacao": agregacao, "resultado": round(float(resultado), 2)}
+    resultado = operacoes[agregacao]()
+
+    if pd.isna(resultado):
+        return {"ok": False, "error": f"A coluna '{coluna}' contém apenas valores nulos. Não é possível calcular '{agregacao}'."}
+
+    valor = float(resultado) if isinstance(resultado, (int, float)) else str(resultado)
+    return {"ok": True, "tipo": "Cartão", "coluna": coluna, "agregacao": agregacao, "resultado": round(valor, 2) if isinstance(valor, float) else valor}
 
 @mcp.tool()
 def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) -> dict:
@@ -135,16 +172,26 @@ def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) ->
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
 
-    df = pd.read_csv(file_path_object)
+    df, erro_leitura = ler_csv(file_path_object)
+    if erro_leitura:
+        return {"ok": False, "error": erro_leitura}
+    if df.empty:
+        return {"ok": False, "error": "O arquivo CSV está vazio."}
+    if eixo_x == eixo_y:
+        return {"ok": False, "error": "Eixo X e eixo Y não podem ser a mesma coluna."}
     for coluna in [eixo_x, eixo_y]:
         if coluna not in df.columns:
-            return {"ok": False, "error": f"A coluna '{coluna}' não existe no conjunto de dados importado"}
-
+            return {"ok": False, "error": f"A coluna '{coluna}' não existe. Colunas disponíveis: {list(df.columns)}"}
     if not pd.api.types.is_numeric_dtype(df[eixo_y]):
-        return {"ok": False, "error": f"A coluna '{eixo_y}' não é numérica. O eixo Y deve ser uma coluna numérica. Colunas numéricas disponíveis: {[c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]}"}
+        return {"ok": False, "error": f"'{eixo_y}' não é numérica. Colunas numéricas disponíveis: {[c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]}"}
+    if df[eixo_y].isna().all():
+        return {"ok": False, "error": f"A coluna '{eixo_y}' contém apenas valores nulos."}
+
+    cardinalidade = df[eixo_x].nunique()
+    if cardinalidade > MAX_CATEGORIAS_EIXO_X:
+        return {"ok": False, "error": f"A coluna '{eixo_x}' tem {cardinalidade} categorias únicas (limite: {MAX_CATEGORIAS_EIXO_X}). Escolha uma coluna com menos categorias ou aplique um filtro antes."}
 
     dados_agrupados = df.groupby(eixo_x)[eixo_y].sum().reset_index()
-
     return {"ok": True, "tipo": "barras_verticais", "x": eixo_x, "y": eixo_y, "dados_agrupados": dados_agrupados.to_dict(orient="records")}
 
 @mcp.tool()
@@ -161,16 +208,26 @@ def estrutura_dados_barras_horizontais(csv_path: str, eixo_x: str, eixo_y: str) 
     if not file_path_object.exists():
         return {"ok": False, "error": f"Arquivo não encontrado. Verifique o caminho do arquivo e tente novamente"}
 
-    df = pd.read_csv(file_path_object)
+    df, erro_leitura = ler_csv(file_path_object)
+    if erro_leitura:
+        return {"ok": False, "error": erro_leitura}
+    if df.empty:
+        return {"ok": False, "error": "O arquivo CSV está vazio."}
+    if eixo_x == eixo_y:
+        return {"ok": False, "error": "Eixo X e eixo Y não podem ser a mesma coluna."}
     for coluna in [eixo_x, eixo_y]:
         if coluna not in df.columns:
-            return {"ok": False, "error": f"A coluna '{coluna}' não existe no conjunto de dados importado"}
-
+            return {"ok": False, "error": f"A coluna '{coluna}' não existe. Colunas disponíveis: {list(df.columns)}"}
     if not pd.api.types.is_numeric_dtype(df[eixo_y]):
-        return {"ok": False, "error": f"A coluna '{eixo_y}' não é numérica. O eixo Y deve ser uma coluna numérica. Colunas numéricas disponíveis: {[c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]}"}
+        return {"ok": False, "error": f"'{eixo_y}' não é numérica. Colunas numéricas disponíveis: {[c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]}"}
+    if df[eixo_y].isna().all():
+        return {"ok": False, "error": f"A coluna '{eixo_y}' contém apenas valores nulos."}
+
+    cardinalidade = df[eixo_x].nunique()
+    if cardinalidade > MAX_CATEGORIAS_EIXO_X:
+        return {"ok": False, "error": f"A coluna '{eixo_x}' tem {cardinalidade} categorias únicas (limite: {MAX_CATEGORIAS_EIXO_X}). Escolha uma coluna com menos categorias ou aplique um filtro antes."}
 
     dados_agrupados = df.groupby(eixo_x)[eixo_y].sum().reset_index()
-
     return {"ok": True, "tipo": "barras_horizontais", "x": eixo_x, "y": eixo_y, "dados_agrupados": dados_agrupados.to_dict(orient="records")}
 
 
