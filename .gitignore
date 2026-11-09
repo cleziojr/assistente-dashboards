@@ -8,3 +8,6 @@ __pycache__/
 
 # Banco vetorial local e PDFs grandes (opcional: pergunte ao colega se ele quer o chroma_munzner no Git ou se vai rodar indexar_livro.py)
 !especificacao_ferramentas_mcp.pdf
+
+# Banco de dados do Chroma
+**/chroma.sqlite3
