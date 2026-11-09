@@ -1,16 +1,44 @@
+import os
+import sys
+import json
 import base64
 import shutil
+import socket
+import subprocess
 import time
 import pandas as pd
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
+from dotenv import load_dotenv
+
+load_dotenv()
 
 mcp = FastMCP("Servidor do Assistente de Dashboards")
 MAX_MB = 10
 MAX_BYTES_BASE64 = MAX_MB * 1024 * 1024
 TEMPO_EXPIRACAO_SEGUNDOS = 3600
 EXTENSOES_PERMITIDAS = {".csv"}
+MAX_PROCESSOS = 10
 DATA_DIRETORIO = Path(__file__).resolve().parents[2] / "data"
+SCRIPTS_DIRETORIO = Path(__file__).resolve().parents[2] / "data" / "apps_gerados"
+
+processos_streamlit: dict[str, subprocess.Popen] = {}
+
+ENDERECO_STREAMLIT = (
+    "0.0.0.0" if os.getenv("STREAMLIT_ENV", "development") == "production" else "localhost"
+)
+
+
+def encontrar_porta_livre() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+def limpar_processos_encerrados():
+    encerrados = [chave for chave, processo in processos_streamlit.items() if processo.poll() is not None]
+    for chave in encerrados:
+        del processos_streamlit[chave]
 
 
 def limpar_sessoes_expiradas():
@@ -170,6 +198,93 @@ def upload_csv_bytes(nome_arquivo: str, conteudo_base64: str) -> dict:
     destino.write_bytes(conteudo)
 
     return {"ok": True, "caminho": str(destino), "mensagem": f"Arquivo salvo. Use o caminho '{destino}' nas demais ferramentas."}
+
+
+from src.mcp.templates import TEMPLATE_STREAMLIT, TEMPLATE_BARRAS_VERTICAIS, TEMPLATE_BARRAS_HORIZONTAIS, TEMPLATE_CARTAO
+
+
+@mcp.tool()
+def gerar_app_streamlit(
+    csv_path: str,
+    tipo_grafico: str,
+    eixo_x: str,
+    eixo_y: str,
+    titulo: str = "Dashboard",
+    agregacao: str = "total",
+    session_id: str = "",
+) -> dict:
+    """Gera um app Streamlit com o gráfico solicitado e retorna o link de acesso.
+    tipo_grafico deve ser: barras_verticais, barras_horizontais ou cartao.
+    agregacao é usado apenas para cartao: total, media, contagem, maximo, minimo.
+    Informe session_id para identificar sua sessão e permitir atualizar o dashboard sem abrir nova porta."""
+    limpar_sessoes_expiradas()
+    limpar_processos_encerrados()
+
+    tipos_validos = {"barras_verticais", "barras_horizontais", "cartao"}
+    if tipo_grafico not in tipos_validos:
+        return {"ok": False, "error": f"tipo_grafico deve ser um de: {tipos_validos}"}
+
+    caminho = Path(csv_path).resolve()
+    erro_caminho = valida_caminho_arquivo(caminho)
+    if erro_caminho:
+        return {"ok": False, "error": erro_caminho}
+    if not caminho.exists():
+        return {"ok": False, "error": "Arquivo CSV não encontrado."}
+
+    chave = session_id or csv_path
+
+    processo_anterior = processos_streamlit.get(chave)
+    if processo_anterior and processo_anterior.poll() is None:
+        processo_anterior.terminate()
+        processo_anterior.wait(timeout=5)
+    elif len(processos_streamlit) >= MAX_PROCESSOS:
+        return {"ok": False, "error": f"Limite de {MAX_PROCESSOS} dashboards ativos atingido. Aguarde."}
+
+    if tipo_grafico == "barras_verticais":
+        resultado = estrutura_dados_barras_verticais(csv_path, eixo_x, eixo_y)
+    elif tipo_grafico == "barras_horizontais":
+        resultado = estrutura_dados_barras_horizontais(csv_path, eixo_x, eixo_y)
+    else:
+        resultado = efetua_agregacao_dados(csv_path, eixo_y, agregacao)
+
+    if not resultado.get("ok"):
+        return resultado
+
+    if tipo_grafico == "cartao":
+        label = f"{agregacao.capitalize()} de {eixo_y}"
+        codigo_grafico = TEMPLATE_CARTAO.format(
+            label=label,
+            valor=resultado.get("resultado", 0),
+        )
+        dados_json = "[]"
+    else:
+        dados_json = json.dumps(resultado["dados_agrupados"], ensure_ascii=False)
+        template = TEMPLATE_BARRAS_VERTICAIS if tipo_grafico == "barras_verticais" else TEMPLATE_BARRAS_HORIZONTAIS
+        codigo_grafico = template.format(eixo_x=eixo_x, eixo_y=eixo_y)
+
+    script = TEMPLATE_STREAMLIT.format(
+        titulo=titulo,
+        dados_json=dados_json,
+        eixo_x=eixo_x,
+        codigo_grafico=codigo_grafico,
+    )
+
+    SCRIPTS_DIRETORIO.mkdir(parents=True, exist_ok=True)
+    script_path = SCRIPTS_DIRETORIO / f"app_{int(time.time())}.py"
+    script_path.write_text(script, encoding="utf-8")
+
+    porta = encontrar_porta_livre()
+    processo = subprocess.Popen([
+        sys.executable, "-m", "streamlit", "run", str(script_path),
+        "--server.port", str(porta),
+        "--server.address", ENDERECO_STREAMLIT,
+        "--server.headless", "true",
+    ])
+    processos_streamlit[chave] = processo
+
+    host = "localhost" if ENDERECO_STREAMLIT != "0.0.0.0" else ENDERECO_STREAMLIT
+    url = f"http://{host}:{porta}"
+    return {"ok": True, "url": url, "script_path": str(script_path)}
 
 
 if __name__ == "__main__":
