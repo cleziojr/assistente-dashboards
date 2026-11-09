@@ -140,6 +140,9 @@ def estrutura_dados_barras_verticais(csv_path: str, eixo_x: str, eixo_y: str) ->
         if coluna not in df.columns:
             return {"ok": False, "error": f"A coluna '{coluna}' não existe no conjunto de dados importado"}
 
+    if not pd.api.types.is_numeric_dtype(df[eixo_y]):
+        return {"ok": False, "error": f"A coluna '{eixo_y}' não é numérica. O eixo Y deve ser uma coluna numérica. Colunas numéricas disponíveis: {[c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]}"}
+
     dados_agrupados = df.groupby(eixo_x)[eixo_y].sum().reset_index()
 
     return {"ok": True, "tipo": "barras_verticais", "x": eixo_x, "y": eixo_y, "dados_agrupados": dados_agrupados.to_dict(orient="records")}
@@ -162,6 +165,9 @@ def estrutura_dados_barras_horizontais(csv_path: str, eixo_x: str, eixo_y: str) 
     for coluna in [eixo_x, eixo_y]:
         if coluna not in df.columns:
             return {"ok": False, "error": f"A coluna '{coluna}' não existe no conjunto de dados importado"}
+
+    if not pd.api.types.is_numeric_dtype(df[eixo_y]):
+        return {"ok": False, "error": f"A coluna '{eixo_y}' não é numérica. O eixo Y deve ser uma coluna numérica. Colunas numéricas disponíveis: {[c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]}"}
 
     dados_agrupados = df.groupby(eixo_x)[eixo_y].sum().reset_index()
 
@@ -274,12 +280,34 @@ def gerar_app_streamlit(
     script_path.write_text(script, encoding="utf-8")
 
     porta = encontrar_porta_livre()
-    processo = subprocess.Popen([
-        sys.executable, "-m", "streamlit", "run", str(script_path),
-        "--server.port", str(porta),
-        "--server.address", ENDERECO_STREAMLIT,
-        "--server.headless", "true",
-    ])
+    log_path = SCRIPTS_DIRETORIO / f"log_{int(time.time())}.txt"
+    log_file = open(log_path, "w", encoding="utf-8")
+
+    processo = subprocess.Popen(
+        [
+            sys.executable, "-m", "streamlit", "run", str(script_path),
+            "--server.port", str(porta),
+            "--server.address", ENDERECO_STREAMLIT,
+            "--server.headless", "true",
+        ],
+        stdout=log_file,
+        stderr=log_file,
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(filter(None, [
+                str(Path(__file__).resolve().parents[2]),
+                os.environ.get("PYTHONPATH", ""),
+            ])),
+        },
+    )
+
+    time.sleep(4)
+    log_file.flush()
+    if processo.poll() is not None:
+        log_file.close()
+        conteudo_log = Path(log_path).read_text(encoding="utf-8", errors="replace")
+        return {"ok": False, "error": f"Servidor encerrou. Log: {conteudo_log[:800]}"}
+
     processos_streamlit[chave] = processo
 
     host = "localhost" if ENDERECO_STREAMLIT != "0.0.0.0" else ENDERECO_STREAMLIT
