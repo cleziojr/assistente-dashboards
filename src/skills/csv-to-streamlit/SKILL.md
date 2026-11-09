@@ -19,13 +19,14 @@ description: Transforma CSV em dashboard Streamlit. Use quando o usuário mencio
    - Valor único agregado → "efetua_agregacao_dados"
    - Em caso de dúvida sobre a escolha, leia "src/skills/design-rules/SKILL.md"
 
-4. **Chamar a ferramenta de estruturação**: passe "csv_path" e as colunas identificadas no passo 2.
-   - Para "efetua_agregacao_dados", informe também a "agregacao" desejada (total, media, contagem, maximo, minimo).
-   - O assistente Streamlit renderizará o gráfico automaticamente a partir do resultado retornado pela ferramenta.
+4. **Chamar a ferramenta de estruturação** (padrão — sempre use primeiro):
+   - "estrutura_dados_barras_verticais" ou "estrutura_dados_barras_horizontais": passe "csv_path", "eixo_x" e "eixo_y".
+   - "efetua_agregacao_dados": passe "csv_path", "coluna" e "agregacao" (total, media, contagem, maximo, minimo).
+   - O gráfico será renderizado automaticamente no chat a partir do resultado. NÃO chame "gerar_app_streamlit" neste passo.
 
-5. **Confirmar com o usuário**: apresente o resultado e pergunte se deseja outro tipo de visualização ou exportar como app independente.
+5. **Confirmar com o usuário**: apresente o resultado e pergunte se deseja outro tipo de visualização ou um app com link de acesso externo.
 
-6. **Gerar app independente (opcional)**: se o usuário solicitar um dashboard fora do chat ou um link de acesso, chame "gerar_app_streamlit" com os parâmetros:
+6. **Gerar app independente (somente se o usuário pedir explicitamente um link ou app externo)**: chame "gerar_app_streamlit" com os parâmetros:
    - "csv_path": caminho do arquivo
    - "tipo_grafico": "barras_verticais", "barras_horizontais" ou "cartao"
    - "eixo_x": coluna categórica
