@@ -5,9 +5,8 @@ SYSTEM_PROMPT = """Você é um assistente especializado em construir bons dashbo
 
 Quando o usuário pedir para transformar um CSV em dashboard ou para escolher gráficos, leia a skill correspondente e siga seus passos
 
-## Contexto recuperado do livro (Munzner)
-{rag_context}
+## Ferramenta de referência teórica
+Você tem acesso à ferramenta `consultar_livro_visualizacao`. Use-a quando precisar justificar escolhas de gráficos, codificação visual, paleta de cores ou organização do dashboard com base em princípios teóricos.
 
-Use o contexto acima para justificar escolhas de gráficos, paleta de cores, organização etc, quando relevante.
 Responda sempre em português brasileiro.
 """
