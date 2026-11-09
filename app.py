@@ -14,7 +14,7 @@ st.set_page_config(page_title="Assistente de Dashboards", layout="wide")
 st.title("📊 Assistente de Dashboards")
 
 LIMITE_UPLOADS = 3
-DATA_ROOT = Path("data")
+DATA_ROOT = Path(__file__).resolve().parent / "data"
 
 
 @st.cache_resource
@@ -30,6 +30,8 @@ if "historico" not in st.session_state:
     st.session_state.historico = []
 if "upload_count" not in st.session_state:
     st.session_state.upload_count = 0
+if "ultimo_csv" not in st.session_state:
+    st.session_state.ultimo_csv = None
 
 SESSION_DIR = DATA_ROOT / st.session_state.thread_id
 SESSION_DIR.mkdir(parents=True, exist_ok=True)
@@ -62,12 +64,19 @@ with st.sidebar:
             destino = SESSION_DIR / arquivo.name
             destino.write_bytes(arquivo.read())
             st.session_state.upload_count += 1
-            st.success(f"Salvo em {destino}")
-            st.caption(f"Informe ao assistente: *analise o arquivo `{destino}`*")
+            st.session_state.ultimo_csv = str(destino)
+            st.success(f"Arquivo salvo!")
+            st.code(str(destino), language=None)
+            st.caption("Copie o caminho acima e informe ao assistente.")
             st.rerun()
     else:
         st.warning("Limite de 3 uploads atingido. Atualize a página para iniciar nova sessão.")
         st.file_uploader("Upload desabilitado", type="csv", disabled=True)
+
+    if st.session_state.ultimo_csv:
+        st.divider()
+        st.caption("📎 Último arquivo enviado:")
+        st.code(st.session_state.ultimo_csv, language=None)
 
 
 def extrair_dados_grafico(tool_messages: list) -> list:
@@ -75,7 +84,10 @@ def extrair_dados_grafico(tool_messages: list) -> list:
     graficos = []
     for msg in tool_messages:
         try:
-            dados = json.loads(msg.content)
+            conteudo = msg.content
+            if isinstance(conteudo, list):
+                conteudo = next((b.get("text", "") for b in conteudo if isinstance(b, dict) and b.get("type") == "text"), "")
+            dados = json.loads(conteudo)
             if dados.get("ok") and dados.get("tipo") in {"barras_verticais", "barras_horizontais", "Cartão"}:
                 graficos.append(dados)
         except (json.JSONDecodeError, AttributeError):
