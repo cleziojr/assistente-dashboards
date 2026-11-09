@@ -11,6 +11,19 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from dotenv import load_dotenv
 
+PROJETO_RAIZ = Path(__file__).resolve().parents[2]
+
+def streamlit_exe() -> str:
+    """Localiza o streamlit.exe no mesmo virtualenv que está rodando este processo."""
+    scripts_dir = Path(sys.executable).parent
+    for nome in ["streamlit.exe", "streamlit"]:
+        candidato = scripts_dir / nome
+        if candidato.exists():
+            return str(candidato)
+    return shutil.which("streamlit") or "streamlit"
+
+STREAMLIT_EXE = streamlit_exe()
+
 load_dotenv()
 
 mcp = FastMCP("Servidor do Assistente de Dashboards")
@@ -18,11 +31,8 @@ MAX_MB = 10
 MAX_BYTES_BASE64 = MAX_MB * 1024 * 1024
 TEMPO_EXPIRACAO_SEGUNDOS = 3600
 EXTENSOES_PERMITIDAS = {".csv"}
-MAX_PROCESSOS = 10
 DATA_DIRETORIO = Path(__file__).resolve().parents[2] / "data"
-SCRIPTS_DIRETORIO = Path(__file__).resolve().parents[2] / "data" / "apps_gerados"
-
-processos_streamlit: dict[str, subprocess.Popen] = {}
+SCRIPTS_DIRETORIO = Path(__file__).resolve().parents[2] / "apps_gerados"
 
 ENDERECO_STREAMLIT = (
     "0.0.0.0" if os.getenv("STREAMLIT_ENV", "development") == "production" else "localhost"
@@ -33,12 +43,6 @@ def encontrar_porta_livre() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         return s.getsockname()[1]
-
-
-def limpar_processos_encerrados():
-    encerrados = [chave for chave, processo in processos_streamlit.items() if processo.poll() is not None]
-    for chave in encerrados:
-        del processos_streamlit[chave]
 
 
 def limpar_sessoes_expiradas():
@@ -266,6 +270,61 @@ def upload_csv_bytes(nome_arquivo: str, conteudo_base64: str) -> dict:
 from src.mcp.templates import TEMPLATE_STREAMLIT, TEMPLATE_BARRAS_VERTICAIS, TEMPLATE_BARRAS_HORIZONTAIS, TEMPLATE_CARTAO
 
 
+def aguarda_porta(porta: int, timeout: int = 25) -> bool:
+    """Retorna True assim que a porta aceitar conexões TCP, ou False após o timeout."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("localhost", porta), timeout=1):
+                return True
+        except OSError:
+            time.sleep(1)
+    return False
+
+
+def lanca_streamlit_destacado(script_path: Path, porta: int) -> str | None:
+    """Lança o Streamlit desacoplado do processo atual. Retorna mensagem de erro ou None.
+
+    No Windows, o servidor MCP roda dentro de um Job Object com KILL_ON_JOB_CLOSE criado
+    pelo SDK do MCP: qualquer filho direto morre quando o servidor MCP encerra. Para o
+    dashboard sobreviver, ele é criado via WMI (Win32_Process.Create), que o instancia a
+    partir do WmiPrvSE.exe (fora do Job Object do servidor MCP)
+    """
+    cmdline = (
+        f'"{STREAMLIT_EXE}" run "{script_path}" '
+        f'--server.port {porta} --server.address {ENDERECO_STREAMLIT} '
+        f'--server.headless true --browser.gatherUsageStats false'
+    )
+
+    if sys.platform != "win32":
+        try:
+            subprocess.Popen(
+                cmdline, shell=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+                cwd=str(PROJETO_RAIZ), start_new_session=True,
+            )
+            return None
+        except Exception as e:
+            return f"Falha ao lançar o servidor: {e}"
+
+    comando_powershell = (
+        "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
+        f"-Arguments @{{CommandLine='{cmdline}'; CurrentDirectory='{PROJETO_RAIZ}'}}; "
+        "exit $r.ReturnValue"
+    )
+    try:
+        resultado = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", comando_powershell],
+            capture_output=True, text=True, timeout=30,
+        )
+    except Exception as e:
+        return f"Falha ao invocar o lançador do servidor: {e}"
+
+    if resultado.returncode != 0:
+        return f"WMI retornou código {resultado.returncode} ao criar o processo. Detalhes: {resultado.stderr[:300]}"
+    return None
+
+
 @mcp.tool()
 def gerar_app_streamlit(
     csv_path: str,
@@ -274,14 +333,11 @@ def gerar_app_streamlit(
     eixo_y: str,
     titulo: str = "Dashboard",
     agregacao: str = "total",
-    session_id: str = "",
 ) -> dict:
     """Gera um app Streamlit com o gráfico solicitado e retorna o link de acesso.
     tipo_grafico deve ser: barras_verticais, barras_horizontais ou cartao.
-    agregacao é usado apenas para cartao: total, media, contagem, maximo, minimo.
-    Informe session_id para identificar sua sessão e permitir atualizar o dashboard sem abrir nova porta."""
+    agregacao é usado apenas para cartao: total, media, contagem, maximo, minimo."""
     limpar_sessoes_expiradas()
-    limpar_processos_encerrados()
 
     tipos_validos = {"barras_verticais", "barras_horizontais", "cartao"}
     if tipo_grafico not in tipos_validos:
@@ -293,15 +349,6 @@ def gerar_app_streamlit(
         return {"ok": False, "error": erro_caminho}
     if not caminho.exists():
         return {"ok": False, "error": "Arquivo CSV não encontrado."}
-
-    chave = session_id or csv_path
-
-    processo_anterior = processos_streamlit.get(chave)
-    if processo_anterior and processo_anterior.poll() is None:
-        processo_anterior.terminate()
-        processo_anterior.wait(timeout=5)
-    elif len(processos_streamlit) >= MAX_PROCESSOS:
-        return {"ok": False, "error": f"Limite de {MAX_PROCESSOS} dashboards ativos atingido. Aguarde."}
 
     if tipo_grafico == "barras_verticais":
         resultado = estrutura_dados_barras_verticais(csv_path, eixo_x, eixo_y)
@@ -337,35 +384,13 @@ def gerar_app_streamlit(
     script_path.write_text(script, encoding="utf-8")
 
     porta = encontrar_porta_livre()
-    log_path = SCRIPTS_DIRETORIO / f"log_{int(time.time())}.txt"
-    log_file = open(log_path, "w", encoding="utf-8")
 
-    processo = subprocess.Popen(
-        [
-            sys.executable, "-m", "streamlit", "run", str(script_path),
-            "--server.port", str(porta),
-            "--server.address", ENDERECO_STREAMLIT,
-            "--server.headless", "true",
-        ],
-        stdout=log_file,
-        stderr=log_file,
-        env={
-            **os.environ,
-            "PYTHONPATH": os.pathsep.join(filter(None, [
-                str(Path(__file__).resolve().parents[2]),
-                os.environ.get("PYTHONPATH", ""),
-            ])),
-        },
-    )
+    erro_lancamento = lanca_streamlit_destacado(script_path, porta)
+    if erro_lancamento:
+        return {"ok": False, "error": erro_lancamento, "streamlit_exe": STREAMLIT_EXE}
 
-    time.sleep(4)
-    log_file.flush()
-    if processo.poll() is not None:
-        log_file.close()
-        conteudo_log = Path(log_path).read_text(encoding="utf-8", errors="replace")
-        return {"ok": False, "error": f"Servidor encerrou. Log: {conteudo_log[:800]}"}
-
-    processos_streamlit[chave] = processo
+    if not aguarda_porta(porta, timeout=25):
+        return {"ok": False, "error": f"O servidor não respondeu na porta {porta} dentro do tempo limite."}
 
     host = "localhost" if ENDERECO_STREAMLIT != "0.0.0.0" else ENDERECO_STREAMLIT
     url = f"http://{host}:{porta}"

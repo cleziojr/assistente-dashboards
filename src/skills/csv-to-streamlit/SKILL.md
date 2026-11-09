@@ -34,7 +34,9 @@ description: Transforma CSV em dashboard Streamlit. Use quando o usuário mencio
    - "titulo": título do dashboard (opcional)
    - "agregacao": apenas para cartao (total, media, contagem, maximo, minimo)
    - "session_id": identificador da sessão para reutilizar a porta se atualizar o dashboard
-   - Retorne o link "url" ao usuário.
+   - Aguarde o retorno da ferramenta (pode levar até 20 segundos enquanto o servidor sobe).
+   - Se "ok: true", retorne o link "url" ao usuário com a mensagem de que o dashboard está pronto.
+   - Se "ok: false", informe o erro ao usuário e não envie nenhum link.
 
 ## Restrições
 - Nunca gere código Python diretamente na resposta.
